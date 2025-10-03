@@ -1,0 +1,60 @@
+#pragma once
+#include <SDL.h>
+#include <array>
+#include <vector>
+class Machine
+{
+
+public:
+    /// @brief Video memory of the pseudo console. Although we can use bytes to compress the data horizontally by packing bits into bytes, we can't do that vertically
+    using VideoMemoryType = std::array<uint8_t, TOTAL_VIDEO_MEMORY_SIZE>;
+    using VirtualMemoryType = std::array<uint8_t, TOTAL_MEMORY_SIZE>;
+    explicit Machine();
+    void step();
+
+    void render();
+
+    /**
+     * @brief Writes the data from the sprite into the ram at a given position
+     *
+     * @param position Point in memory to write to
+     * @param sprite bytes for the sprite
+     */
+    void writeSpriteToMemory(size_t position, std::vector<uint8_t> sprite);
+
+    VideoMemoryType const &getVideoMemory() { return m_video; }
+    VirtualMemoryType &getMemory() { return m_memory; }
+
+private:
+    void opDraw(uint16_t opcode);
+    
+    inline void opSetRegisterToConst(uint16_t opcode)
+    {
+        m_registers[(opcode & 0x0f00) >> 8] = opcode & 0x00ff;
+    }
+
+    inline void opSpecialFunctions(uint16_t opcode)
+    {
+        if ((opcode & 0x00ff) == 0x1e)
+        {
+            m_memoryRegister += m_registers[(opcode & 0x0f00) >> 8];
+        }
+    }
+    void opRegisterToRegister(uint16_t opcode);
+
+    inline void updateFlags(uint16_t res)
+    { // set carry flag
+        m_registers[15] = (m_registers[15] & 0xFE) | (res & 0xFF > 0);
+        // set sign flag
+        m_registers[15] = (m_registers[15] & 0xFD) | ((res > 127) << 1);
+        // set zero flag
+        m_registers[15] = (m_registers[15] & 0xFB) | (((res & 0xff) == 0) << 2);
+    }
+
+    VirtualMemoryType m_memory;
+    VideoMemoryType m_video;
+    size_t m_programCounter;
+    size_t m_memoryRegister;
+    std::array<uint8_t, 16> m_registers;
+    size_t m_stackPointer;
+};
