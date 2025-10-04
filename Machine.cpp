@@ -18,14 +18,45 @@ void Machine::step()
     if (opcode == 0x00e1)
     {
         m_programCounter = m_memory.size();
+        return;
     }
     switch ((opcode & 0xf000) >> 12)
     {
+    case 0:
+        opControlInstructions(opcode);
+        break;
+    case 1:
+        m_programCounter = opcode & 0x0fff;
+        return;
+    case 2:
+        pushToStack(m_programCounter);
+        m_programCounter = opcode & 0x0fff;
+        break;
+    case 3:
+    {
+        if (m_registers[(opcode & 0x0f00) >> 8] == (opcode & 0x00ff))
+        {
+            m_programCounter += 2;
+        }
+    }
+    break;
+    case 4:
+        if (m_registers[(opcode & 0x0f00) >> 8] != (opcode & 0x00ff))
+        {
+            m_programCounter += 2;
+        }
+        break;
+    case 5:
+        if (m_registers[(opcode & 0x0f00) >> 8] == m_registers[(opcode & 0x00f0) >> 4])
+        {
+            m_programCounter += 2;
+        }
+        break;
     case 6:
-        opSetRegisterToConst(opcode);
+        m_registers[(opcode & 0x0f00) >> 8] = opcode & 0x00ff;
         break;
     case 7:
-        m_registers[(opcode & 0x0f00) >> 8] = opcode & 0x00ff;
+        m_registers[(opcode & 0x0f00) >> 8] += opcode & 0x00ff;
         break;
     case 8:
         opRegisterToRegister(opcode);
@@ -57,6 +88,36 @@ void Machine::writeSpriteToMemory(size_t position, std::vector<uint8_t> sprite)
     {
         m_memory[position + i] = sprite[i];
     }
+}
+
+void Machine::pushToStack(uint32_t value)
+{
+    m_memory[m_stackPointer - 3] = (value & 0xff000000) >> 24;
+    m_memory[m_stackPointer - 2] = (value & 0x00ff0000) >> 16;
+    m_memory[m_stackPointer - 1] = (value & 0x0000ff00) >> 8;
+    m_memory[m_stackPointer - 0] = (value & 0x000000ff);
+    m_stackPointer -= 3;
+}
+
+uint32_t Machine::popFromStack()
+{
+    if (m_stackPointer >= m_memory.size())
+    {
+        return -1;
+    }
+    uint32_t value = 0;
+    value |= m_memory[m_stackPointer + 0] << 24;
+    value |= m_memory[m_stackPointer + 1] << 16;
+    value |= m_memory[m_stackPointer + 2] << 8;
+    value |= m_memory[m_stackPointer + 3];
+    m_stackPointer += 3;
+
+    return value;
+}
+
+bool Machine::hasValueOnStack()
+{
+    return m_stackPointer < m_memory.size();
 }
 
 void Machine::opDraw(uint16_t opcode)

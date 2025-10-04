@@ -22,16 +22,48 @@ public:
      */
     void writeSpriteToMemory(size_t position, std::vector<uint8_t> sprite);
 
+    /**
+     * @brief Push the value into the virtual memory stack
+     *
+     * @param value Value to push onto the stack
+     */
+    void pushToStack(uint32_t value);
+
+    /**
+     * @brief Get the value from top of the stack or -1 if empty. To ensure that the stack actually has values
+     *
+     * @return uint32_t
+     */
+    uint32_t popFromStack();
+
+    bool hasValueOnStack();
+
     VideoMemoryType const &getVideoMemory() { return m_video; }
     VirtualMemoryType &getMemory() { return m_memory; }
 
 private:
     void opDraw(uint16_t opcode);
-    
-    inline void opSetRegisterToConst(uint16_t opcode)
+
+    inline void opControlInstructions(uint16_t opcode)
     {
-        m_registers[(opcode & 0x0f00) >> 8] = opcode & 0x00ff;
+        if ((opcode & 0x0f00) != 0)
+        {
+            // this should call machine code stuff but don't  have any for now
+            return;
+        }
+        switch ((opcode & 0x00f) >> 8)
+        {
+            // clear screen
+        case 0:
+            std::fill(m_video.begin(), m_video.end(), 0);
+            break;
+        case 0xe:
+            m_programCounter = popFromStack();
+            break;
+        }
     }
+
+
 
     inline void opSpecialFunctions(uint16_t opcode)
     {
