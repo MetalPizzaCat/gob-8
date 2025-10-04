@@ -38,32 +38,18 @@ public:
 
     bool hasValueOnStack();
 
-    VideoMemoryType const &getVideoMemory() { return m_video; }
+    /// @brief Get video memory currently used for writing data
+    /// @return
+    VideoMemoryType &getWorkVideoMemory() { return m_usingPrimaryVideoBuffer ? m_videoPrimaryBuffer : m_videoSecondaryBuffer; }
+    /// @brief Get video memory currently ready to be displayed
+    /// @return
+    VideoMemoryType &getCurrentVideoMemory() { return !m_usingPrimaryVideoBuffer ? m_videoPrimaryBuffer : m_videoSecondaryBuffer; }
     VirtualMemoryType &getMemory() { return m_memory; }
 
 private:
     void opDraw(uint16_t opcode);
 
-    inline void opControlInstructions(uint16_t opcode)
-    {
-        if ((opcode & 0x0f00) != 0)
-        {
-            // this should call machine code stuff but don't  have any for now
-            return;
-        }
-        switch ((opcode & 0x00f) >> 8)
-        {
-            // clear screen
-        case 0:
-            std::fill(m_video.begin(), m_video.end(), 0);
-            break;
-        case 0xe:
-            m_programCounter = popFromStack();
-            break;
-        }
-    }
-
-
+    void opControlInstructions(uint16_t opcode);
 
     inline void opSpecialFunctions(uint16_t opcode)
     {
@@ -84,7 +70,9 @@ private:
     }
 
     VirtualMemoryType m_memory;
-    VideoMemoryType m_video;
+    VideoMemoryType m_videoPrimaryBuffer;
+    VideoMemoryType m_videoSecondaryBuffer;
+    bool m_usingPrimaryVideoBuffer;
     size_t m_programCounter;
     size_t m_memoryRegister;
     std::array<uint8_t, 16> m_registers;

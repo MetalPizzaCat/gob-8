@@ -4,7 +4,9 @@ Machine::Machine()
 {
     m_stackPointer = m_memory.size() - 1;
     std::fill(m_memory.begin(), m_memory.end(), 0);
-    std::fill(m_video.begin(), m_video.end(), 0);
+    std::fill(m_videoPrimaryBuffer.begin(), m_videoPrimaryBuffer.end(), 0);
+    std::fill(m_videoSecondaryBuffer.begin(), m_videoSecondaryBuffer.end(), 0);
+    m_usingPrimaryVideoBuffer = true;
     m_programCounter = 0;
 }
 void Machine::step()
@@ -134,8 +136,31 @@ void Machine::opDraw(uint16_t opcode)
         {
             auto t1 = line & (1 << j);
             auto t2 = t1 >> j;
-            m_video[pos + (8 - j)] ^= (line & (1 << j)) >> j;
+            getWorkVideoMemory()[pos + (8 - j)] ^= (line & (1 << j)) >> j;
         }
+    }
+}
+
+void Machine::opControlInstructions(uint16_t opcode)
+{
+    if ((opcode & 0x0f00) != 0)
+    {
+        // this should call machine code stuff but don't  have any for now
+        return;
+    }
+    switch ((opcode & 0x00f))
+    {
+    // clear screen
+    case 0:
+        std::fill(getWorkVideoMemory().begin(), getWorkVideoMemory().end(), 0);
+        break;
+    // swap buffer
+    case 2:
+        m_usingPrimaryVideoBuffer = !m_usingPrimaryVideoBuffer;
+        break;
+    case 0xe:
+        m_programCounter = popFromStack();
+        break;
     }
 }
 
