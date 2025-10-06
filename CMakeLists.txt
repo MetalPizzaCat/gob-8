@@ -15,4 +15,6 @@ Machine.hpp
 Machine.cpp)
 target_link_libraries(gob-8 ${SDL2_LIBRARIES})
 
+add_executable(gob8asm assembler.cpp)
+
 
