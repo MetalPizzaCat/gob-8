@@ -9,6 +9,20 @@ Machine::Machine()
     m_usingPrimaryVideoBuffer = true;
     m_programCounter = 0;
 }
+Machine::Machine(std::vector<uint8_t> const &bytes)
+{
+    std::fill(m_memory.begin(), m_memory.end(), 0);
+    for (size_t i = 0; i < bytes.size() && i < m_memory.size(); i++)
+    {
+        m_memory[i] = bytes[i];
+    }
+    m_stackPointer = m_memory.size() - 1;
+
+    std::fill(m_videoPrimaryBuffer.begin(), m_videoPrimaryBuffer.end(), 0);
+    std::fill(m_videoSecondaryBuffer.begin(), m_videoSecondaryBuffer.end(), 0);
+    m_usingPrimaryVideoBuffer = true;
+    m_programCounter = 0;
+}
 void Machine::step()
 {
     if (m_programCounter >= m_memory.size())

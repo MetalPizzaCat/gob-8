@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <regex>
+#include <fstream>
 #include <exception>
 
 enum class Instruction
@@ -13,11 +14,20 @@ enum class Instruction
     None,
     Move,
     Clear,
+    Render,
     Draw,
+    SetMemory,
     Jump,
     Call,
     Return,
-    Add
+    Add,
+    Halt
+};
+
+enum class DataSize
+{
+    Byte,
+    Word
 };
 
 std::string hexNumbers = "0123456789abcdef";
@@ -36,12 +46,25 @@ struct InstructionData
     Instruction instruction;
 };
 
+static const std::vector<std::string> AssembleDataOperationKeywords = {
+    "times", "db", "dw"};
+
+static const std::map<std::string, DataSize> DataStoreSizeKeywords = {
+    {"db", DataSize::Byte},
+    {"dw", DataSize::Word}};
+
 static const std::map<std::string, Instruction> Instructions = {
     {"nop", Instruction::None},
     {"mov", Instruction::Move},
     {"jmp", Instruction::Jump},
     {"goto", Instruction::Jump},
-    {"clear", Instruction::None}};
+    {"hlt", Instruction::Halt},
+    {"end", Instruction::Halt},
+    {"draw", Instruction::Draw},
+    {"mem", Instruction::SetMemory},
+    {"clear", Instruction::Clear},
+    {"render", Instruction::Render},
+};
 
 class AssemblingError : public std::exception
 {
@@ -69,6 +92,8 @@ public:
     {
     }
 
+    std::vector<uint8_t> &getBytes() { return m_bytes; }
+
     void parse()
     {
 
@@ -94,25 +119,81 @@ public:
             {
                 continue;
             }
+            if (tryDataOperation())
+            {
+                assembleDataOperations();
+                continue;
+            }
             std::optional<Instruction> instruction = parseInstruction();
             if (!instruction.has_value())
             {
-                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Excepted and instruction");
+                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Excepted an instruction");
             }
             switch (instruction.value())
             {
             case Instruction::None:
+                m_bytes.push_back(0);
                 break;
             case Instruction::Move:
             {
                 assembleMoveOperation();
                 break;
             }
+            case Instruction::Clear:
+            {
+                m_bytes.push_back(0x00);
+                m_bytes.push_back(0xe0);
+                expectLineEnd();
+                break;
+            }
+            case Instruction::Render:
+            {
+                m_bytes.push_back(0x00);
+                m_bytes.push_back(0xe2);
+                expectLineEnd();
+                break;
+            }
+            case Instruction::Draw:
+            {
+                assembleDraw();
+                break;
+            }
+            case Instruction::SetMemory:
+            {
+                assembleAddressInstruction(0xA);
+                break;
+            }
             case Instruction::Jump:
             {
-                assembleJump();
+                assembleAddressInstruction(0x1);
+                break;
             }
-            break;
+            case Instruction::Call:
+            {
+                assembleAddressInstruction(0x2);
+                break;
+            }
+
+            case Instruction::Return:
+            {
+                m_bytes.push_back(0x00);
+                m_bytes.push_back(0xee);
+                expectLineEnd();
+                break;
+            }
+            case Instruction::Add:
+            {
+                break;
+            }
+            case Instruction::Halt:
+            {
+                m_bytes.push_back(0x00);
+                m_bytes.push_back(0xe1);
+                expectLineEnd();
+                break;
+            }
+            default:
+                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Unknown instruction");
             }
         }
 
@@ -143,25 +224,130 @@ public:
     }
 
 private:
-    void assembleJump()
+    void assembleDraw()
     {
         skipWhitespace();
-        if (std::optional<uint32_t> address = parseNumber(); address.has_value())
+        std::optional<size_t> regX = parseRegister();
+        if (!regX.has_value())
         {
-            m_bytes.push_back((0x1 << 4) | ((address.value() & 0x0f00) >> 8));
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register for x");
+        }
+        skipWhitespace();
+        consumeComma();
+        std::optional<size_t> regY = parseRegister();
+        if (!regY.has_value())
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register for y");
+        }
+        skipWhitespace();
+        consumeComma();
+        if (std::optional<uint8_t> height = parseNumber<uint8_t>(); height.has_value())
+        {
+            if (height > 16)
+            {
+                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Height of sprite for draw can not be larger than 16");
+            }
+            else if (height == 0)
+            {
+                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Height of sprite can not be 0");
+            }
+            m_bytes.push_back(0xd0 | regX.value());
+            m_bytes.push_back(((regY.value() & 0xf) << 4) | (height.value() - 1));
+            expectLineEnd();
+        }
+        else
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected value for height");
+        }
+    }
+    void assembleDataOperations()
+    {
+        size_t total = 1;
+        if (std::optional<size_t> repeat = parseTimes(); repeat.has_value())
+        {
+            total = repeat.value();
+        }
+        skipWhitespace();
+        std::optional<DataSize> dataSize = parseDataStore();
+        if (!dataSize.has_value())
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected data store operation");
+        }
+        skipWhitespace();
+        std::vector<uint8_t> bytes;
+        switch (dataSize.value())
+        {
+        case DataSize::Byte:
+        {
+            while (true)
+            {
+                if (std::optional<uint8_t> num = parseNumber<uint8_t>(); num.has_value())
+                {
+                    bytes.push_back(num.value());
+                }
+                else
+                {
+                    throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected a number");
+                }
+                skipWhitespace();
+                if (m_current == m_end || *m_current != ',')
+                {
+                    break;
+                }
+                consumeComma();
+            }
+            break;
+        }
+        case DataSize::Word:
+        {
+            while (true)
+            {
+                if (std::optional<uint16_t> num = parseNumber<uint16_t>(); num.has_value())
+                {
+                    bytes.push_back((num.value() & 0xff00) >> 8);
+                    bytes.push_back(num.value() & 0x00ff);
+                }
+                else
+                {
+                    throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected a number");
+                }
+                skipWhitespace();
+                if (m_current == m_end || *m_current != ',')
+                {
+                    break;
+                }
+                consumeComma();
+            }
+            break;
+        }
+        }
+        for (size_t i = 0; i < total; i++)
+        {
+            m_bytes.insert(m_bytes.end(), bytes.begin(), bytes.end());
+        }
+
+        expectLineEnd();
+    }
+
+    void assembleAddressInstruction(uint8_t firstByte)
+    {
+        skipWhitespace();
+        if (std::optional<uint16_t> address = parseNumber<uint16_t>(); address.has_value())
+        {
+            m_bytes.push_back((firstByte << 4) | ((address.value() & 0x0f00) >> 8));
             m_bytes.push_back(address.value() & 0x00ff);
         }
         else if (std::optional<std::string> label = parseLabelUsage(); label.has_value())
         {
             if (m_labelPositions.count(label.value()) > 0)
             {
-                m_bytes.push_back((0x1 << 4) | ((m_labelPositions[label.value()] & 0x0f00) >> 8));
+                m_bytes.push_back((firstByte << 4) | ((m_labelPositions[label.value()] & 0x0f00) >> 8));
                 m_bytes.push_back(m_labelPositions[label.value()] & 0x00ff);
             }
             else
             {
                 addLabelReplacementPosition(label.value(), m_bytes.size());
-                m_bytes.push_back(0x10);
+                m_bytes.push_back((firstByte << 4));
                 m_bytes.push_back(0x00);
             }
         }
@@ -171,6 +357,7 @@ private:
         }
         expectLineEnd();
     }
+
     void assembleMoveOperation()
     {
         skipWhitespace();
@@ -186,7 +373,7 @@ private:
             m_bytes.push_back((0x8 << 4) | registerId.value());
             m_bytes.push_back(register2Id.value() << 4);
         }
-        else if (std::optional<uint32_t> constVal = parseNumber(); constVal.has_value())
+        else if (std::optional<uint8_t> constVal = parseNumber<uint8_t>(); constVal.has_value())
         {
             m_bytes.push_back((0x6 << 4) | registerId.value());
             m_bytes.push_back(constVal.value());
@@ -197,6 +384,34 @@ private:
         }
         expectLineEnd();
     }
+
+    std::optional<uint32_t> parseTimes()
+    {
+        if (!tryText("times"))
+        {
+            return {};
+        }
+        m_current += std::string("times").size();
+        skipWhitespace();
+        if (std::optional<uint32_t> times = parseNumber<uint32_t>(); times.has_value())
+        {
+            return times;
+        }
+        throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Excepted the times value");
+    }
+
+    bool tryDataOperation()
+    {
+        for (std::string const &keyword : AssembleDataOperationKeywords)
+        {
+            if (tryText(keyword))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     bool tryText(std::string const &text)
     {
         for (size_t i = 0; i < text.size(); i++)
@@ -223,6 +438,18 @@ private:
             {
                 m_current += inIt->first.size();
                 return inIt->second;
+            }
+        }
+        return {};
+    }
+    std::optional<DataSize> parseDataStore()
+    {
+        for (auto const &store : DataStoreSizeKeywords)
+        {
+            if (tryText(store.first))
+            {
+                m_current += store.first.size();
+                return store.second;
             }
         }
         return {};
@@ -266,7 +493,8 @@ private:
         return {};
     }
 
-    std::optional<uint32_t> parseHex()
+    template <typename IntegerType>
+    std::optional<IntegerType> parseHex()
     {
         if (m_current + 2 == m_end || !(*m_current == '0' && *(m_current + 1) == 'x'))
         {
@@ -282,7 +510,7 @@ private:
         {
             res += *(m_current + offset);
         }
-        uint32_t resNum;
+        IntegerType resNum;
         try
         {
             resNum = std::stoi(res, nullptr, 16);
@@ -295,15 +523,54 @@ private:
         {
             throw AssemblingError(m_current - m_begin, m_currentLineNumber,
                                   "Constant number is too large, valid range is " +
-                                      std::to_string(std::numeric_limits<uint16_t>::min()) +
+                                      std::to_string(std::numeric_limits<IntegerType>::min()) +
                                       "< x < " +
-                                      std::to_string(std::numeric_limits<uint16_t>::max()));
+                                      std::to_string(std::numeric_limits<IntegerType>::max()));
         }
         m_current += offset;
         return resNum;
     }
 
-    std::optional<uint32_t> parseDecimal()
+    template <typename IntegerType>
+    std::optional<IntegerType> parseBinary()
+    {
+        if (m_current + 2 == m_end || !(*m_current == '0' && *(m_current + 1) == 'b'))
+        {
+            return {};
+        }
+        size_t offset = 2;
+        if (!(*(m_current + offset) == '0' || *(m_current + offset) == '1'))
+        {
+            return {};
+        }
+        std::string res = "";
+        for (; m_current + offset != m_end && (*(m_current + offset) == '0' || *(m_current + offset) == '1'); offset++)
+        {
+            res += *(m_current + offset);
+        }
+        IntegerType resNum;
+        try
+        {
+            resNum = std::stoi(res, nullptr, 2);
+        }
+        catch (std::invalid_argument const &e)
+        {
+            return {};
+        }
+        catch (std::out_of_range const &e)
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber,
+                                  "Constant number is too large, valid range is " +
+                                      std::to_string(std::numeric_limits<IntegerType>::min()) +
+                                      "< x < " +
+                                      std::to_string(std::numeric_limits<IntegerType>::max()));
+        }
+        m_current += offset;
+        return resNum;
+    }
+
+    template <typename IntegerType>
+    std::optional<IntegerType> parseDecimal()
     {
         if (!std::isdigit(*m_current))
         {
@@ -315,7 +582,7 @@ private:
         {
             res += *(m_current + offset);
         }
-        uint32_t resNum;
+        IntegerType resNum;
         try
         {
             resNum = std::stoi(res);
@@ -328,9 +595,9 @@ private:
         {
             throw AssemblingError(m_current - m_begin, m_currentLineNumber,
                                   "Constant number is too large, valid range is " +
-                                      std::to_string(std::numeric_limits<uint16_t>::min()) +
+                                      std::to_string(std::numeric_limits<IntegerType>::min()) +
                                       "< x < " +
-                                      std::to_string(std::numeric_limits<uint16_t>::max()));
+                                      std::to_string(std::numeric_limits<IntegerType>::max()));
         }
         m_current += offset;
         return resNum;
@@ -343,15 +610,19 @@ private:
      * @param end Iterator pointing to the end of the string
      * @return std::optional<uint32_t> Parsed value or empty value
      */
+    template <typename IntegerType>
     std::optional<uint32_t> parseNumber()
     {
-        std::optional<uint32_t> num = parseHex();
 
-        if (num.has_value())
+        if (std::optional<uint32_t> num = parseHex<IntegerType>(); num.has_value())
         {
             return num;
         }
-        return parseDecimal();
+        if (std::optional<uint32_t> num = parseBinary<IntegerType>(); num.has_value())
+        {
+            return num;
+        }
+        return parseDecimal<IntegerType>();
     }
 
     /**
@@ -418,7 +689,6 @@ private:
             throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Unexpected symbol");
         }
     }
-    std::vector<uint8_t> const &getBytes() { return m_bytes; }
 
 private:
     std::vector<std::string> m_code;
@@ -469,10 +739,19 @@ std::vector<std::string> prepareCode(std::string const &code)
 
 int main(int argc, char **argv)
 {
-    std::string code = "jmp start \nmov a, 23; comment\n; fuck\n mov v1, 0x69 \nstart4: \na equ v0";
+    std::string code = "clear\nmov v0, 6\n mov v1, 6 \n mem sprite\n draw v0, v1, 4\nrender\nhlt\n sprite: db 0b10000000, 0b01000010, 0b00100100, 0b00011000";
     std::vector<std::string> lines = prepareCode(code);
     Assembler assembler(lines);
-    assembler.parse();
+    try
+    {
+        assembler.parse();
+    }
+    catch (AssemblingError e)
+    {
+        std::cout << e.what() << std::endl;
+    }
+    std::ofstream outfile("./game.bin", std::ios::out | std::ios::binary);
+    outfile.write((const char *)assembler.getBytes().data(), assembler.getBytes().size());
 
     return EXIT_SUCCESS;
 }

@@ -10,6 +10,7 @@ public:
     using VideoMemoryType = std::array<uint8_t, TOTAL_VIDEO_MEMORY_SIZE>;
     using VirtualMemoryType = std::array<uint8_t, TOTAL_MEMORY_SIZE>;
     explicit Machine();
+    explicit Machine(std::vector<uint8_t> const &bytes);
     void step();
 
     void render();
