@@ -21,6 +21,7 @@ enum class Instruction
     Call,
     Return,
     Add,
+    In,
     Halt
 };
 
@@ -63,6 +64,7 @@ static const std::map<std::string, Instruction> Instructions = {
     {"draw", Instruction::Draw},
     {"mem", Instruction::SetMemory},
     {"clear", Instruction::Clear},
+    {"in", Instruction::In},
     {"render", Instruction::Render},
 };
 
@@ -183,6 +185,22 @@ public:
             }
             case Instruction::Add:
             {
+                break;
+            }
+            case Instruction::In:
+            {
+                skipWhitespace();
+                if (std::optional<size_t> registerId = parseRegister(); registerId.has_value())
+                {
+                    m_bytes.push_back(0xF0 | registerId.value());
+                    m_bytes.push_back(0x0a);
+                    expectLineEnd();
+                }
+                else
+                {
+                    throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected destination register");
+                }
+
                 break;
             }
             case Instruction::Halt:
@@ -739,7 +757,7 @@ std::vector<std::string> prepareCode(std::string const &code)
 
 int main(int argc, char **argv)
 {
-    std::string code = "clear\nmov v0, 6\n mov v1, 6 \n mem sprite\n draw v0, v1, 4\nrender\nhlt\n sprite: db 0b10000000, 0b01000010, 0b00100100, 0b00011000";
+    std::string code = "in v3\nclear\nmov v0, 6\n mov v1, 6 \n mem sprite\n draw v0, v1, 4\nrender\nhlt\n sprite: db 0b10000000, 0b01000010, 0b00100100, 0b00011000";
     std::vector<std::string> lines = prepareCode(code);
     Assembler assembler(lines);
     try

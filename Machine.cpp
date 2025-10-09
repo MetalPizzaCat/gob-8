@@ -106,27 +106,23 @@ void Machine::writeSpriteToMemory(size_t position, std::vector<uint8_t> sprite)
     }
 }
 
-void Machine::pushToStack(uint32_t value)
+void Machine::pushToStack(uint16_t value)
 {
-    m_memory[m_stackPointer - 3] = (value & 0xff000000) >> 24;
-    m_memory[m_stackPointer - 2] = (value & 0x00ff0000) >> 16;
-    m_memory[m_stackPointer - 1] = (value & 0x0000ff00) >> 8;
-    m_memory[m_stackPointer - 0] = (value & 0x000000ff);
-    m_stackPointer -= 3;
+    m_memory[m_stackPointer - 1] = (value & 0xff00) >> 8;
+    m_memory[m_stackPointer - 0] = (value & 0x00ff);
+    m_stackPointer -= 1;
 }
 
-uint32_t Machine::popFromStack()
+uint16_t Machine::popFromStack()
 {
     if (m_stackPointer >= m_memory.size())
     {
         return -1;
     }
-    uint32_t value = 0;
-    value |= m_memory[m_stackPointer + 0] << 24;
-    value |= m_memory[m_stackPointer + 1] << 16;
+    uint16_t value = 0;
     value |= m_memory[m_stackPointer + 2] << 8;
     value |= m_memory[m_stackPointer + 3];
-    m_stackPointer += 3;
+    m_stackPointer += 1;
 
     return value;
 }
@@ -134,6 +130,15 @@ uint32_t Machine::popFromStack()
 bool Machine::hasValueOnStack()
 {
     return m_stackPointer < m_memory.size();
+}
+
+void Machine::receiveInput(uint8_t key)
+{
+    if (m_inputAwaitDestinationRegister.has_value())
+    {
+        m_registers[m_inputAwaitDestinationRegister.value()] = key;
+        m_inputAwaitDestinationRegister.reset();
+    }
 }
 
 void Machine::opDraw(uint16_t opcode)
@@ -211,9 +216,7 @@ void Machine::opRegisterToRegister(uint16_t opcode)
     break;
     case 6:
     {
-        const uint16_t res = (uint16_t)m_registers[(opcode & 0x0f00) >> 16] >> (uint8_t)m_registers[(opcode & 0x00f0) >> 8];
-        updateFlags(res);
-        m_registers[(opcode & 0x0f00) >> 16] = res;
+        m_registers[(opcode & 0x0f00) >> 16] = std::rotr(m_registers[(opcode & 0x0f00) >> 16], m_registers[(opcode & 0x00f0) >> 8]);
         break;
     }
     case 7:
@@ -225,9 +228,7 @@ void Machine::opRegisterToRegister(uint16_t opcode)
     }
     case 8:
     {
-        const uint16_t res = (uint16_t)m_registers[(opcode & 0x0f00) >> 16] << (uint8_t)m_registers[(opcode & 0x00f0) >> 8];
-        updateFlags(res);
-        m_registers[(opcode & 0x0f00) >> 16] = res;
+        m_registers[(opcode & 0x0f00) >> 16] = std::rotl(m_registers[(opcode & 0x0f00) >> 16], m_registers[(opcode & 0x00f0) >> 8]);
         break;
     }
     }

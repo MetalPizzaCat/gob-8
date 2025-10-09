@@ -2,6 +2,17 @@
 
 DisplaySDL::DisplaySDL()
 {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    {
+        throw DisplayError(std::string("Failed to init sdl. Error: ") + SDL_GetError());
+    }
+    m_window = SDL_CreateWindow("Gob-8", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 320, SDL_WINDOW_SHOWN);
+    if (m_window == nullptr)
+    {
+        throw DisplayError(std::string("Failed to create window. Error:") + SDL_GetError());
+    }
+    m_windowSurface = SDL_GetWindowSurface(m_window);
+
     // m_surface = SDL_CreateRGBSurface(0, 64, 32, 32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
     m_surface = SDL_CreateRGBSurface(0, 64, 32, 32, 0, 0, 0, 0);
     SDL_Color color;
@@ -41,7 +52,20 @@ void DisplaySDL::update(std::array<uint8_t, TOTAL_VIDEO_MEMORY_SIZE> const &vide
     SDL_UnlockSurface(m_surface);
 }
 
+void DisplaySDL::render()
+{
+    SDL_BlitScaled(m_surface, 0, m_windowSurface, 0);
+    SDL_UpdateWindowSurface(m_window);
+}
+
+void DisplaySDL::handleInput()
+{
+   
+}
+
 DisplaySDL::~DisplaySDL()
 {
     SDL_FreeSurface(m_surface);
+    SDL_DestroyWindow(m_window);
+    SDL_Quit();
 }

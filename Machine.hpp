@@ -2,6 +2,7 @@
 #include <SDL.h>
 #include <array>
 #include <vector>
+#include <optional>
 class Machine
 {
 
@@ -28,14 +29,14 @@ public:
      *
      * @param value Value to push onto the stack
      */
-    void pushToStack(uint32_t value);
+    void pushToStack(uint16_t value);
 
     /**
      * @brief Get the value from top of the stack or -1 if empty. To ensure that the stack actually has values
      *
      * @return uint32_t
      */
-    uint32_t popFromStack();
+    uint16_t popFromStack();
 
     bool hasValueOnStack();
 
@@ -46,6 +47,8 @@ public:
     /// @return
     VideoMemoryType &getCurrentVideoMemory() { return !m_usingPrimaryVideoBuffer ? m_videoPrimaryBuffer : m_videoSecondaryBuffer; }
     VirtualMemoryType &getMemory() { return m_memory; }
+    void receiveInput(uint8_t key);
+    bool isAwaitingInput() { return m_inputAwaitDestinationRegister.has_value(); }
 
 private:
     void opDraw(uint16_t opcode);
@@ -54,9 +57,14 @@ private:
 
     inline void opSpecialFunctions(uint16_t opcode)
     {
-        if ((opcode & 0x00ff) == 0x1e)
+        switch (opcode & 0x00ff)
         {
+        case 0x1e:
             m_memoryRegister += m_registers[(opcode & 0x0f00) >> 8];
+            break;
+        case 0x0a:
+            m_inputAwaitDestinationRegister = (opcode & 0x0f00) >> 8;
+            break;
         }
     }
     void opRegisterToRegister(uint16_t opcode);
@@ -78,4 +86,7 @@ private:
     size_t m_memoryRegister;
     std::array<uint8_t, 16> m_registers;
     size_t m_stackPointer;
+
+    /// @brief Register to write in the input value once the key is pressed
+    std::optional<size_t> m_inputAwaitDestinationRegister;
 };

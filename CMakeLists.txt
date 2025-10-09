@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.10.0)
 project(gob-8 VERSION 0.1.0 LANGUAGES C CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED true)
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
+
 add_compile_definitions(TOTAL_VIDEO_MEMORY_SIZE=64*32)
 add_compile_definitions(TOTAL_MEMORY_SIZE=0x1000)
 
