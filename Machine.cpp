@@ -6,6 +6,7 @@ Machine::Machine()
     std::fill(m_memory.begin(), m_memory.end(), 0);
     std::fill(m_videoPrimaryBuffer.begin(), m_videoPrimaryBuffer.end(), 0);
     std::fill(m_videoSecondaryBuffer.begin(), m_videoSecondaryBuffer.end(), 0);
+    std::fill(m_keystates.begin(), m_keystates.end(), false);
     m_usingPrimaryVideoBuffer = true;
     m_programCounter = 0;
 }
@@ -20,6 +21,7 @@ Machine::Machine(std::vector<uint8_t> const &bytes)
 
     std::fill(m_videoPrimaryBuffer.begin(), m_videoPrimaryBuffer.end(), 0);
     std::fill(m_videoSecondaryBuffer.begin(), m_videoSecondaryBuffer.end(), 0);
+    std::fill(m_keystates.begin(), m_keystates.end(), false);
     m_usingPrimaryVideoBuffer = true;
     m_programCounter = 0;
 }
@@ -47,7 +49,7 @@ void Machine::step()
     case 2:
         pushToStack(m_programCounter);
         m_programCounter = opcode & 0x0fff;
-        break;
+        return;
     case 3:
     {
         if (m_registers[(opcode & 0x0f00) >> 8] == (opcode & 0x00ff))
@@ -80,10 +82,20 @@ void Machine::step()
     case 0xA:
         m_memoryRegister = opcode & 0x0fff;
         break;
+    case 0xB:
+        m_programCounter = m_registers[0] + opcode & 0x0fff;
+        break;
+    case 0xC:
+        m_registers[(opcode & 0x0f00) >> 8] = rand() & (opcode & 0x00ff);
+        break;
     case 0xD:
         opDraw(opcode);
         break;
     case 0xE:
+        if (handleKeyOpcodes(opcode))
+        {
+            return;
+        }
         break;
     case 0xF:
         opSpecialFunctions(opcode);
@@ -120,8 +132,8 @@ uint16_t Machine::popFromStack()
         return -1;
     }
     uint16_t value = 0;
-    value |= m_memory[m_stackPointer + 2] << 8;
-    value |= m_memory[m_stackPointer + 3];
+    value = m_memory[m_stackPointer + 0] << 8;
+    value |= m_memory[m_stackPointer + 1];
     m_stackPointer += 1;
 
     return value;
@@ -139,6 +151,11 @@ void Machine::receiveInput(uint8_t key)
         m_registers[m_inputAwaitDestinationRegister.value()] = key;
         m_inputAwaitDestinationRegister.reset();
     }
+}
+
+void Machine::setKeyState(uint8_t key, bool pressed)
+{
+    m_keystates[key] = pressed;
 }
 
 void Machine::opDraw(uint16_t opcode)
@@ -188,48 +205,70 @@ void Machine::opRegisterToRegister(uint16_t opcode)
     switch (opcode & 0x000f)
     {
     case 0:
-        m_registers[(opcode & 0x0f00) >> 16] = m_registers[(opcode & 0x00f0) >> 8];
+        m_registers[(opcode & 0x0f00) >> 8] = m_registers[(opcode & 0x00f0) >> 4];
         break;
     case 1:
-        m_registers[(opcode & 0x0f00) >> 16] |= m_registers[(opcode & 0x00f0) >> 8];
+        m_registers[(opcode & 0x0f00) >> 8] |= m_registers[(opcode & 0x00f0) >> 4];
         break;
     case 2:
-        m_registers[(opcode & 0x0f00) >> 16] &= m_registers[(opcode & 0x00f0) >> 8];
+        m_registers[(opcode & 0x0f00) >> 8] &= m_registers[(opcode & 0x00f0) >> 4];
         break;
     case 3:
-        m_registers[(opcode & 0x0f00) >> 16] ^= m_registers[(opcode & 0x00f0) >> 8];
+        m_registers[(opcode & 0x0f00) >> 8] ^= m_registers[(opcode & 0x00f0) >> 4];
         break;
     case 4:
     {
-        const uint16_t res = (uint16_t)m_registers[(opcode & 0x0f00) >> 16] + (uint8_t)m_registers[(opcode & 0x00f0) >> 8];
+        const uint16_t res = (uint16_t)m_registers[(opcode & 0x0f00) >> 8] + (uint8_t)m_registers[(opcode & 0x00f0) >> 4];
         updateFlags(res);
-        m_registers[(opcode & 0x0f00) >> 16] = res;
+        m_registers[(opcode & 0x0f00) >> 8] = res;
     }
 
     break;
     case 5:
     {
-        const uint16_t res = (uint16_t)m_registers[(opcode & 0x0f00) >> 16] - (uint8_t)m_registers[(opcode & 0x00f0) >> 8];
+        const uint16_t res = (uint16_t)m_registers[(opcode & 0x0f00) >> 8] - (uint8_t)m_registers[(opcode & 0x00f0) >> 4];
         updateFlags(res);
-        m_registers[(opcode & 0x0f00) >> 16] = res;
+        m_registers[(opcode & 0x0f00) >> 8] = res;
     }
     break;
     case 6:
     {
-        m_registers[(opcode & 0x0f00) >> 16] = std::rotr(m_registers[(opcode & 0x0f00) >> 16], m_registers[(opcode & 0x00f0) >> 8]);
+        m_registers[(opcode & 0x0f00) >> 8] = std::rotr(m_registers[(opcode & 0x0f00) >> 8], m_registers[(opcode & 0x00f0) >> 4]);
         break;
     }
     case 7:
     {
-        const uint16_t res = (uint8_t)m_registers[(opcode & 0x00f0) >> 8] - (uint16_t)m_registers[(opcode & 0x0f00) >> 16];
+        const uint16_t res = (uint8_t)m_registers[(opcode & 0x00f0) >> 4] - (uint16_t)m_registers[(opcode & 0x0f00) >> 8];
         updateFlags(res);
-        m_registers[(opcode & 0x0f00) >> 16] = res;
+        m_registers[(opcode & 0x0f00) >> 8] = res;
         break;
     }
     case 8:
     {
-        m_registers[(opcode & 0x0f00) >> 16] = std::rotl(m_registers[(opcode & 0x0f00) >> 16], m_registers[(opcode & 0x00f0) >> 8]);
+        m_registers[(opcode & 0x0f00) >> 8] = std::rotl(m_registers[(opcode & 0x0f00) >> 8], m_registers[(opcode & 0x00f0) >> 4]);
         break;
     }
     }
+}
+
+bool Machine::handleKeyOpcodes(uint16_t opcode)
+{
+    switch (opcode & 0xff)
+    {
+    case 0x9e: // skip if key is pressed
+        if (m_keystates[m_registers[(opcode & 0x0f00) >> 8]])
+        {
+            m_programCounter += 4;
+            return true;
+        }
+        break;
+    case 0xa1: // skip if key is not pressed
+        if (!m_keystates[m_registers[(opcode & 0x0f00) >> 8]])
+        {
+            m_programCounter += 4;
+            return true;
+        }
+        break;
+    }
+    return false;
 }

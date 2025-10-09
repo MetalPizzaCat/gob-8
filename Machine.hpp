@@ -50,6 +50,8 @@ public:
     void receiveInput(uint8_t key);
     bool isAwaitingInput() { return m_inputAwaitDestinationRegister.has_value(); }
 
+    void setKeyState(uint8_t key, bool pressed);
+
 private:
     void opDraw(uint16_t opcode);
 
@@ -78,6 +80,8 @@ private:
         m_registers[15] = (m_registers[15] & 0xFB) | (((res & 0xff) == 0) << 2);
     }
 
+    bool handleKeyOpcodes(uint16_t opcode);
+
     VirtualMemoryType m_memory;
     VideoMemoryType m_videoPrimaryBuffer;
     VideoMemoryType m_videoSecondaryBuffer;
@@ -89,4 +93,5 @@ private:
 
     /// @brief Register to write in the input value once the key is pressed
     std::optional<size_t> m_inputAwaitDestinationRegister;
+    std::array<bool, 16> m_keystates;
 };

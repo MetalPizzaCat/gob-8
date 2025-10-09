@@ -4,6 +4,7 @@
 #include <bitset>
 #include <SDL.h>
 #include <fstream>
+#include <map>
 #include <algorithm>
 
 #include "DisplaySDL.hpp"
@@ -32,6 +33,7 @@ static const std::vector<SDL_Scancode> Keymap = {
     SDL_Scancode::SDL_SCANCODE_BACKSPACE // 0xf
 };
 
+
 std::optional<uint8_t> handleInput(SDL_Scancode key)
 {
     std::vector<SDL_Scancode>::const_iterator it = std::find(Keymap.begin(), Keymap.end(), key);
@@ -39,11 +41,12 @@ std::optional<uint8_t> handleInput(SDL_Scancode key)
     {
         return {};
     }
-    return (it - Keymap.begin());
+    return (it - Keymap.begin() + 1);
 }
 
 int main(int argc, char **argv)
 {
+    uint32_t frameCap = 60;
     std::string inputFilename = "./game.bin";
     for (int i = 0; i < argc; i++)
     {
@@ -56,6 +59,15 @@ int main(int argc, char **argv)
                 return EXIT_FAILURE;
             }
             inputFilename = std::string(argv[i + 1]);
+        }
+        if (arg == "--framecap")
+        {
+            if (i + 1 > argc)
+            {
+                std::cerr << "Missing value for the framecap" << std::endl;
+                return EXIT_FAILURE;
+            }
+            frameCap = std::stoul(std::string(argv[i + 1]));
         }
     }
     std::ifstream file(inputFilename, std::ios::binary);
@@ -90,19 +102,27 @@ int main(int argc, char **argv)
                 quit = true;
                 break;
             case SDL_KEYDOWN:
-                if (machine.isAwaitingInput())
+
+                if (std::optional<uint8_t> inp = handleInput(e.key.keysym.scancode); inp.has_value())
                 {
-                    if (std::optional<uint8_t> inp = handleInput(e.key.keysym.scancode); inp.has_value())
+                    if (machine.isAwaitingInput())
                     {
                         lastKeyPressed = inp.value();
                     }
+                    machine.setKeyState(inp.value(), true);
+                }
+                break;
+            case SDL_KEYUP:
+                if (std::optional<uint8_t> inp = handleInput(e.key.keysym.scancode); inp.has_value())
+                {
+                    machine.setKeyState(inp.value(), false);
                 }
                 break;
             }
         }
         timeNow = SDL_GetTicks();
         delta = timeNow - timePrev;
-        if (delta > 1000.0 / 60.0)
+        if (frameCap == 0 || delta > 1000.0 / (double)frameCap)
         {
             if (machine.isAwaitingInput())
             {

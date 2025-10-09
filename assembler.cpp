@@ -30,6 +30,9 @@ enum class Instruction
     Equals,
     NotEquals,
     In,
+    KeyPressed,
+    KeyNotPressed,
+    MemAdd,
     Halt
 };
 
@@ -64,11 +67,13 @@ static const std::map<std::string, DataSize> DataStoreSizeKeywords = {
 
 static const std::map<std::string, Instruction> Instructions = {
     {"nop", Instruction::None},
+    {"call", Instruction::Call},
     {"mov", Instruction::Move},
     {"jmp", Instruction::Jump},
     {"goto", Instruction::Jump},
     {"hlt", Instruction::Halt},
     {"end", Instruction::Halt},
+    {"ret", Instruction::Return},
     {"draw", Instruction::Draw},
     {"mem", Instruction::SetMemory},
     {"clear", Instruction::Clear},
@@ -82,6 +87,9 @@ static const std::map<std::string, Instruction> Instructions = {
     {"rol", Instruction::RotateLeft},
     {"eq", Instruction::Equals},
     {"neq", Instruction::NotEquals},
+    {"keydown", Instruction::KeyPressed},
+    {"keyup", Instruction::KeyNotPressed},
+    {"memadd", Instruction::MemAdd},
     {"render", Instruction::Render},
 };
 
@@ -246,6 +254,16 @@ public:
                 assembleEqualsOperation(0x4, 0x9);
                 break;
             }
+            case Instruction::KeyPressed:
+            {
+                assembleCheckKeyPress(0x9e);
+                break;
+            }
+            case Instruction::KeyNotPressed:
+            {
+                assembleCheckKeyPress(0xa1);
+                break;
+            }
             case Instruction::In:
             {
                 skipWhitespace();
@@ -260,6 +278,18 @@ public:
                     throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected destination register");
                 }
 
+                break;
+            }
+            case Instruction::MemAdd:
+            {
+                skipWhitespace();
+                if (std::optional<size_t> reg = parseRegister(); reg.has_value())
+                {
+                    m_bytes.push_back(0xf0 | reg.value());
+                    m_bytes.push_back(0x1e);
+                    expectLineEnd();
+                }
+                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
                 break;
             }
             case Instruction::Halt:
@@ -301,6 +331,18 @@ public:
     }
 
 private:
+    void assembleCheckKeyPress(uint8_t dataByte)
+    {
+        skipWhitespace();
+        if (std::optional<size_t> reg = parseRegister(); reg.has_value())
+        {
+            m_bytes.push_back(0xe0 | reg.value());
+            m_bytes.push_back(dataByte);
+            expectLineEnd();
+            return;
+        }
+        throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+    }
     void assembleEqualsOperation(uint8_t constOperationBit, uint8_t registerOperationBit)
     {
         skipWhitespace();
@@ -855,6 +897,18 @@ private:
     std::map<std::string, size_t> m_labelPositions;
 };
 
+std::vector<std::string> getCodeLines(std::string const &code)
+{
+    std::stringstream stringStream(code);
+    std::vector<std::string> result;
+    std::string line;
+    while (std::getline(stringStream, line, '\n'))
+    {
+        result.push_back(line);
+    }
+    return result;
+}
+
 std::vector<std::string> prepareCode(std::string const &code)
 {
     std::regex commentRegex("(;(\\S|\\s)+)");
@@ -925,15 +979,29 @@ int main(int argc, char **argv)
     std::stringstream codeFile;
     codeFile << inputFile.rdbuf();
     std::string code = codeFile.str(); //" mov v0, 6\n mov v1, 6 \n mem sprite\nloop: clear \n add v0, 1 \n draw v0, v1, 4\nrender\njmp loop\nhlt\n sprite: db 0b10000000, 0b01000010, 0b00100100, 0b00011000";
-    std::vector<std::string> lines = prepareCode(code);
-    Assembler assembler(lines);
+    std::vector<std::string> linesCleaned = prepareCode(code);
+    Assembler assembler(linesCleaned);
     try
     {
         assembler.parse();
     }
     catch (AssemblingError e)
     {
+        std::vector<std::string> lines = getCodeLines(code);
         std::cout << e.what() << std::endl;
+        if (e.getRow() > 0)
+        {
+            std::cout << e.getRow() << ":  " << lines[e.getRow() - 1] << std::endl;
+        }
+        std::cout << e.getRow() + 1 << ":  " << lines[e.getRow()] << "\033[31m <-- error here\033[0m" << std::endl;
+        if (e.getRow() + 1 < lines.size())
+        {
+            std::cout << e.getRow() + 2 << ":  " << lines[e.getRow() + 1] << std::endl;
+        }
+    }
+    if (assembler.getBytes().size() > 4096)
+    {
+        std::cout << "\033[33mWarning! The final file exceeds the available memory in the interpreter. Final file is " << assembler.getBytes().size() << " bytes long with max being 4096 bytes\033[0m" << std::endl;
     }
     std::ofstream outfile(outputFilename, std::ios::out | std::ios::binary);
     outfile.write((const char *)assembler.getBytes().data(), assembler.getBytes().size());
