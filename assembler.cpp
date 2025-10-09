@@ -21,6 +21,14 @@ enum class Instruction
     Call,
     Return,
     Add,
+    Sub,
+    Or,
+    And,
+    Xor,
+    RotateRight,
+    RotateLeft,
+    Equals,
+    NotEquals,
     In,
     Halt
 };
@@ -65,6 +73,15 @@ static const std::map<std::string, Instruction> Instructions = {
     {"mem", Instruction::SetMemory},
     {"clear", Instruction::Clear},
     {"in", Instruction::In},
+    {"add", Instruction::Add},
+    {"sub", Instruction::Sub},
+    {"or", Instruction::Or},
+    {"and", Instruction::And},
+    {"xor", Instruction::Xor},
+    {"ror", Instruction::RotateRight},
+    {"rol", Instruction::RotateLeft},
+    {"eq", Instruction::Equals},
+    {"neq", Instruction::NotEquals},
     {"render", Instruction::Render},
 };
 
@@ -185,6 +202,48 @@ public:
             }
             case Instruction::Add:
             {
+                assembleAddOperation();
+
+                break;
+            }
+            case Instruction::Sub:
+            {
+                assembleMathOperations(0x5);
+                break;
+            }
+            case Instruction::Or:
+            {
+                assembleMathOperations(0x1);
+                break;
+            }
+            case Instruction::And:
+            {
+                assembleMathOperations(0x2);
+                break;
+            }
+            case Instruction::Xor:
+            {
+                assembleMathOperations(0x3);
+                break;
+            }
+            case Instruction::RotateRight:
+            {
+                assembleMathOperations(0x6);
+                break;
+            }
+            case Instruction::RotateLeft:
+            {
+                assembleMathOperations(0x8);
+                break;
+            }
+            case Instruction::Equals:
+            {
+                assembleEqualsOperation(0x3, 0x5);
+                break;
+            }
+            case Instruction::NotEquals:
+            {
+                assembleEqualsOperation(0x4, 0x9);
                 break;
             }
             case Instruction::In:
@@ -242,6 +301,82 @@ public:
     }
 
 private:
+    void assembleEqualsOperation(uint8_t constOperationBit, uint8_t registerOperationBit)
+    {
+        skipWhitespace();
+        std::optional<size_t> registerId = parseRegister();
+        if (!registerId.has_value())
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+        }
+        skipWhitespace();
+        consumeComma();
+        skipWhitespace();
+        if (std::optional<size_t> register2Id = parseRegister(); register2Id.has_value())
+        {
+            m_bytes.push_back((registerOperationBit << 4) | registerId.value());
+            m_bytes.push_back((register2Id.value() << 4));
+        }
+        else if (std::optional<uint8_t> val = parseNumber<uint8_t>(); val.has_value())
+        {
+            m_bytes.push_back((constOperationBit << 4) | registerId.value());
+            m_bytes.push_back(val.value());
+        }
+        else
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register or number");
+        }
+        expectLineEnd();
+    }
+    void assembleAddOperation()
+    {
+        skipWhitespace();
+        std::optional<size_t> registerA = parseRegister();
+        if (!registerA.has_value())
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+        }
+        skipWhitespace();
+        consumeComma();
+        skipWhitespace();
+        if (std::optional<size_t> registerB = parseRegister(); registerB.has_value())
+        {
+            m_bytes.push_back(0x80 | registerA.value());
+            m_bytes.push_back((registerB.value() << 4) | 4);
+        }
+        else if (std::optional<uint8_t> val = parseNumber<uint8_t>(); val.has_value())
+        {
+            m_bytes.push_back(0x70 | registerA.value());
+            m_bytes.push_back(val.value());
+        }
+        else
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register or number");
+        }
+        expectLineEnd();
+    }
+    void assembleMathOperations(uint8_t operationTypeBit)
+    {
+        skipWhitespace();
+        std::optional<size_t> registerA = parseRegister();
+        if (!registerA.has_value())
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+        }
+        skipWhitespace();
+        consumeComma();
+        skipWhitespace();
+        if (std::optional<size_t> registerB = parseRegister(); registerB.has_value())
+        {
+            m_bytes.push_back(0x80 | registerA.value());
+            m_bytes.push_back((registerB.value() << 4) | operationTypeBit);
+        }
+        else
+        {
+            throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+        }
+        expectLineEnd();
+    }
     void assembleDraw()
     {
         skipWhitespace();
@@ -757,7 +892,39 @@ std::vector<std::string> prepareCode(std::string const &code)
 
 int main(int argc, char **argv)
 {
-    std::string code = "in v3\nclear\nmov v0, 6\n mov v1, 6 \n mem sprite\n draw v0, v1, 4\nrender\nhlt\n sprite: db 0b10000000, 0b01000010, 0b00100100, 0b00011000";
+    std::string outputFilename = "./game.bin";
+    std::string inputFilename = "./game.asm";
+    for (int i = 0; i < argc; i++)
+    {
+        std::string arg = std::string(argv[i]);
+        if (arg == "-i" || arg == "--input")
+        {
+            if (i + 1 > argc)
+            {
+                std::cerr << "Missing filename for input flag" << std::endl;
+                return EXIT_FAILURE;
+            }
+            inputFilename = std::string(argv[i + 1]);
+        }
+        if (arg == "-o" || arg == "--output")
+        {
+            if (i + 1 > argc)
+            {
+                std::cerr << "Missing filename for output flag" << std::endl;
+                return EXIT_FAILURE;
+            }
+            outputFilename = std::string(argv[i + 1]);
+        }
+    }
+    std::ifstream inputFile(inputFilename);
+    if (!inputFile.is_open())
+    {
+        std::cerr << "Unabled to open input file" << std::endl;
+        return EXIT_FAILURE;
+    }
+    std::stringstream codeFile;
+    codeFile << inputFile.rdbuf();
+    std::string code = codeFile.str(); //" mov v0, 6\n mov v1, 6 \n mem sprite\nloop: clear \n add v0, 1 \n draw v0, v1, 4\nrender\njmp loop\nhlt\n sprite: db 0b10000000, 0b01000010, 0b00100100, 0b00011000";
     std::vector<std::string> lines = prepareCode(code);
     Assembler assembler(lines);
     try
@@ -768,7 +935,7 @@ int main(int argc, char **argv)
     {
         std::cout << e.what() << std::endl;
     }
-    std::ofstream outfile("./game.bin", std::ios::out | std::ios::binary);
+    std::ofstream outfile(outputFilename, std::ios::out | std::ios::binary);
     outfile.write((const char *)assembler.getBytes().data(), assembler.getBytes().size());
 
     return EXIT_SUCCESS;
