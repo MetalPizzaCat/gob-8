@@ -33,7 +33,6 @@ static const std::vector<SDL_Scancode> Keymap = {
     SDL_Scancode::SDL_SCANCODE_BACKSPACE // 0xf
 };
 
-
 std::optional<uint8_t> handleInput(SDL_Scancode key)
 {
     std::vector<SDL_Scancode>::const_iterator it = std::find(Keymap.begin(), Keymap.end(), key);
@@ -43,6 +42,14 @@ std::optional<uint8_t> handleInput(SDL_Scancode key)
     }
     return (it - Keymap.begin() + 1);
 }
+
+struct AudioData
+{
+    uint32_t audioLength;
+    uint8_t *audioPosition;
+    int32_t volume;
+    bool playing = true;
+};
 
 int main(int argc, char **argv)
 {
@@ -124,6 +131,7 @@ int main(int argc, char **argv)
         delta = timeNow - timePrev;
         if (frameCap == 0 || delta > 1000.0 / (double)frameCap)
         {
+            machine.advanceTimers();
             if (machine.isAwaitingInput())
             {
                 if (lastKeyPressed.has_value())
@@ -136,12 +144,17 @@ int main(int argc, char **argv)
             {
                 machine.step();
             }
+
             display.update(machine.getCurrentVideoMemory());
             display.render();
+
+            if (machine.shouldBeep())
+            {
+                display.playSound();
+            }
             timePrev = timeNow;
             delta = 0;
         }
     }
-
     return EXIT_SUCCESS;
 }

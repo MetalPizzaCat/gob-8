@@ -2,7 +2,7 @@
 
 DisplaySDL::DisplaySDL()
 {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
         throw DisplayError(std::string("Failed to init sdl. Error: ") + SDL_GetError());
     }
@@ -11,8 +11,21 @@ DisplaySDL::DisplaySDL()
     {
         throw DisplayError(std::string("Failed to create window. Error:") + SDL_GetError());
     }
+
     m_windowSurface = SDL_GetWindowSurface(m_window);
 
+    if (SDL_LoadWAV("./beep.wav", &m_wavSpec, &m_beepAudioBuffer, &m_beepAudioLength) == NULL)
+    {
+        throw DisplayError(std::string("Failed to load beep sound. Error:") + SDL_GetError());
+    }
+    m_wavSpec.callback = nullptr;
+    m_wavSpec.userdata = nullptr;
+    if (SDL_OpenAudio(&m_wavSpec, nullptr) < 0)
+    {
+        throw DisplayError(std::string("Failed to start audio. Error:") + SDL_GetError());
+    }
+
+    SDL_PauseAudioDevice(1, 0);
     // m_surface = SDL_CreateRGBSurface(0, 64, 32, 32, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
     m_surface = SDL_CreateRGBSurface(0, 64, 32, 32, 0, 0, 0, 0);
     SDL_Color color;
@@ -60,12 +73,18 @@ void DisplaySDL::render()
 
 void DisplaySDL::handleInput()
 {
-   
+}
+
+void DisplaySDL::playSound()
+{
+    SDL_QueueAudio(1, m_beepAudioBuffer, m_beepAudioLength);
 }
 
 DisplaySDL::~DisplaySDL()
 {
+    SDL_FreeWAV(m_beepAudioBuffer);
     SDL_FreeSurface(m_surface);
     SDL_DestroyWindow(m_window);
+    SDL_CloseAudio();
     SDL_Quit();
 }

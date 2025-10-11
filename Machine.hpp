@@ -52,6 +52,10 @@ public:
 
     void setKeyState(uint8_t key, bool pressed);
 
+    void advanceTimers();
+
+    bool shouldBeep() const { return m_audioTimer > 0; }
+
 private:
     void opDraw(uint16_t opcode);
 
@@ -61,11 +65,20 @@ private:
     {
         switch (opcode & 0x00ff)
         {
-        case 0x1e:
-            m_memoryRegister += m_registers[(opcode & 0x0f00) >> 8];
+        case 0x07:
+            m_registers[(opcode & 0x0f00) >> 8] = m_timer;
             break;
         case 0x0a:
             m_inputAwaitDestinationRegister = (opcode & 0x0f00) >> 8;
+            break;
+        case 0x15:
+            m_timer = m_registers[(opcode & 0x0f00) >> 8];
+            break;
+        case 0x18:
+            m_audioTimer = m_registers[(opcode & 0x0f00) >> 8];
+            break;
+        case 0x1e:
+            m_memoryRegister += m_registers[(opcode & 0x0f00) >> 8];
             break;
         }
     }
@@ -73,11 +86,11 @@ private:
 
     inline void updateFlags(uint16_t res)
     { // set carry flag
-        m_registers[15] = (m_registers[15] & 0xFE) | (res & 0xFF > 0);
+        m_registers[15] = (m_registers[15] & 0xFE) | (res & 0xF00 > 0);
         // set sign flag
-        m_registers[15] = (m_registers[15] & 0xFD) | ((res > 127) << 1);
+        // m_registers[15] = (m_registers[15] & 0xFD) | ((res > 127) << 1);
         // set zero flag
-        m_registers[15] = (m_registers[15] & 0xFB) | (((res & 0xff) == 0) << 2);
+        // m_registers[15] = (m_registers[15] & 0xFB) | (((res & 0xff) == 0) << 2);
     }
 
     bool handleKeyOpcodes(uint16_t opcode);
@@ -94,4 +107,6 @@ private:
     /// @brief Register to write in the input value once the key is pressed
     std::optional<size_t> m_inputAwaitDestinationRegister;
     std::array<bool, 16> m_keystates;
+    uint8_t m_audioTimer = 0;
+    uint8_t m_timer = 0;
 };

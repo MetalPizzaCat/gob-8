@@ -158,6 +158,18 @@ void Machine::setKeyState(uint8_t key, bool pressed)
     m_keystates[key] = pressed;
 }
 
+void Machine::advanceTimers()
+{
+    if (m_audioTimer > 0)
+    {
+        m_audioTimer--;
+    }
+    if (m_timer > 0)
+    {
+        m_timer--;
+    }
+}
+
 void Machine::opDraw(uint16_t opcode)
 {
     const uint8_t x = m_registers[(opcode & 0x0f00) >> 8];

@@ -33,6 +33,9 @@ enum class Instruction
     KeyPressed,
     KeyNotPressed,
     MemAdd,
+    SetAudioTimer,
+    GetTimer,
+    SetTimer,
     Halt
 };
 
@@ -90,6 +93,9 @@ static const std::map<std::string, Instruction> Instructions = {
     {"keydown", Instruction::KeyPressed},
     {"keyup", Instruction::KeyNotPressed},
     {"memadd", Instruction::MemAdd},
+    {"beep", Instruction::SetAudioTimer},
+    {"settimer", Instruction::SetTimer},
+    {"gettimer", Instruction::GetTimer},
     {"render", Instruction::Render},
 };
 
@@ -282,14 +288,22 @@ public:
             }
             case Instruction::MemAdd:
             {
-                skipWhitespace();
-                if (std::optional<size_t> reg = parseRegister(); reg.has_value())
-                {
-                    m_bytes.push_back(0xf0 | reg.value());
-                    m_bytes.push_back(0x1e);
-                    expectLineEnd();
-                }
-                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+                assembleSingleRegisterSpecials(0x1e);
+                break;
+            }
+            case Instruction::SetAudioTimer:
+            {
+                assembleSingleRegisterSpecials(0x18);
+                break;
+            }
+            case Instruction::GetTimer:
+            {
+                assembleSingleRegisterSpecials(0x07);
+                break;
+            }
+            case Instruction::SetTimer:
+            {
+                assembleSingleRegisterSpecials(0x15);
                 break;
             }
             case Instruction::Halt:
@@ -331,6 +345,23 @@ public:
     }
 
 private:
+    /**
+     * @brief Covers several opcodes that take register as input and only differ by the second byte
+     *
+     * @param dataByte
+     */
+    void assembleSingleRegisterSpecials(uint8_t dataByte)
+    {
+        skipWhitespace();
+        if (std::optional<size_t> reg = parseRegister(); reg.has_value())
+        {
+            m_bytes.push_back(0xf0 | reg.value());
+            m_bytes.push_back(dataByte);
+            expectLineEnd();
+            return;
+        }
+        throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Expected register");
+    }
     void assembleCheckKeyPress(uint8_t dataByte)
     {
         skipWhitespace();
@@ -675,6 +706,7 @@ private:
         {
             return {};
         }
+        char c = *(m_current + 1);
         size_t it = hexNumbers.find(*(m_current + 1));
         if (it == std::string::npos)
         {
@@ -970,6 +1002,7 @@ int main(int argc, char **argv)
             outputFilename = std::string(argv[i + 1]);
         }
     }
+
     std::ifstream inputFile(inputFilename);
     if (!inputFile.is_open())
     {

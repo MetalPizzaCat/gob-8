@@ -9,12 +9,13 @@ class DisplaySDL : public Display
 {
 public:
     explicit DisplaySDL();
-    virtual void update(std::array<uint8_t, TOTAL_VIDEO_MEMORY_SIZE> const &videoData);
+    void update(std::array<uint8_t, TOTAL_VIDEO_MEMORY_SIZE> const &videoData) override;
 
     SDL_Surface *getSurface() const { return m_surface; }
 
-    void render();
-    void handleInput();
+    void render() override;
+    void handleInput() override;
+    void playSound() override;
     virtual ~DisplaySDL();
 
 private:
@@ -23,4 +24,7 @@ private:
     SDL_Color m_primaryColor;
     SDL_Color m_secondaryColor;
     SDL_Window *m_window;
+    uint8_t *m_beepAudioBuffer;
+    uint32_t m_beepAudioLength;
+    SDL_AudioSpec m_wavSpec;
 };

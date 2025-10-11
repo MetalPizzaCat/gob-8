@@ -16,6 +16,8 @@ public:
     virtual void render() = 0;
 
     virtual void handleInput() = 0;
+
+    virtual void playSound() = 0;
 };
 
 /**
