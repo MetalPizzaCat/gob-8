@@ -12,6 +12,10 @@ public:
     using VirtualMemoryType = std::array<uint8_t, TOTAL_MEMORY_SIZE>;
     explicit Machine();
     explicit Machine(std::vector<uint8_t> const &bytes);
+    /// @brief Load machine with state data
+    /// @param bytes ROM for the machine to execute 
+    /// @param stateBytes Additional array containing info about registers, program counters and video memory
+    explicit Machine(std::vector<uint8_t> const &bytes, std::vector<uint8_t> stateBytes);
     void step();
 
     void render();
@@ -46,8 +50,19 @@ public:
     /// @brief Get video memory currently ready to be displayed
     /// @return
     VideoMemoryType &getCurrentVideoMemory() { return !m_usingPrimaryVideoBuffer ? m_videoPrimaryBuffer : m_videoSecondaryBuffer; }
+    /**
+     * @brief Get the Memory object Get the current memory of the interpreter excluding timers and registers
+     *
+     * @return VirtualMemoryType& Virtual memory
+     */
     VirtualMemoryType &getMemory() { return m_memory; }
+
+    /// @brief Get additional memory such as registers and timers for inclusion in the state dump
+    /// @return
+    std::vector<uint8_t> getAdditionalMemory();
+
     void receiveInput(uint8_t key);
+
     bool isAwaitingInput() { return m_inputAwaitDestinationRegister.has_value(); }
 
     void setKeyState(uint8_t key, bool pressed);

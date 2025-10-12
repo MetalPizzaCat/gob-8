@@ -17,13 +17,39 @@ Machine::Machine(std::vector<uint8_t> const &bytes)
     {
         m_memory[i] = bytes[i];
     }
-    m_stackPointer = m_memory.size() - 1;
-
     std::fill(m_videoPrimaryBuffer.begin(), m_videoPrimaryBuffer.end(), 0);
     std::fill(m_videoSecondaryBuffer.begin(), m_videoSecondaryBuffer.end(), 0);
     std::fill(m_keystates.begin(), m_keystates.end(), false);
-    m_usingPrimaryVideoBuffer = true;
+    m_stackPointer = m_memory.size() - 1;
     m_programCounter = 0;
+    m_usingPrimaryVideoBuffer = true;
+}
+Machine::Machine(std::vector<uint8_t> const &bytes, std::vector<uint8_t> stateBytes)
+{
+    std::fill(m_memory.begin(), m_memory.end(), 0);
+    for (size_t i = 0; i < bytes.size() && i < m_memory.size(); i++)
+    {
+        m_memory[i] = bytes[i];
+    }
+    size_t i = 0;
+    for (; i < 16; i++)
+    {
+        m_registers[i] = stateBytes[i];
+    }
+    m_audioTimer = stateBytes[i];
+    m_timer = stateBytes[i + 1];
+    m_programCounter = (stateBytes[i + 2] << 8) | stateBytes[i + 3];
+    m_stackPointer = (stateBytes[i + 4] << 8) | stateBytes[i + 5];
+    m_memoryRegister = (stateBytes[i + 6] << 8) | stateBytes[i + 7];
+    m_usingPrimaryVideoBuffer = stateBytes[i + 8];
+    for (size_t j = 0; j < m_videoPrimaryBuffer.size(); j++)
+    {
+        m_videoPrimaryBuffer[j] = stateBytes[i + 9 + j];
+    }
+    for (size_t j = 0; j < m_videoPrimaryBuffer.size(); j++)
+    {
+        m_videoSecondaryBuffer[j] = stateBytes[i + 9 + j + m_videoPrimaryBuffer.size()];
+    }
 }
 void Machine::step()
 {
@@ -144,6 +170,27 @@ bool Machine::hasValueOnStack()
     return m_stackPointer < m_memory.size();
 }
 
+std::vector<uint8_t> Machine::getAdditionalMemory()
+{
+    std::vector<uint8_t> regCopy;
+    for (size_t i = 0; i < m_registers.size(); i++)
+    {
+        regCopy.push_back(m_registers[i]);
+    }
+    regCopy.push_back(m_audioTimer);
+    regCopy.push_back(m_timer);
+    regCopy.push_back((m_programCounter & 0xff00) >> 8);
+    regCopy.push_back((m_programCounter & 0x00ff));
+    regCopy.push_back((m_stackPointer & 0xff00) >> 8);
+    regCopy.push_back((m_stackPointer & 0x00ff));
+    regCopy.push_back((m_memoryRegister & 0xff00) >> 8);
+    regCopy.push_back((m_memoryRegister & 0x00ff));
+    regCopy.push_back(m_usingPrimaryVideoBuffer);
+    regCopy.insert(regCopy.end(), m_videoPrimaryBuffer.begin(), m_videoPrimaryBuffer.end());
+    regCopy.insert(regCopy.end(), m_videoSecondaryBuffer.begin(), m_videoSecondaryBuffer.end());
+    return regCopy;
+}
+
 void Machine::receiveInput(uint8_t key)
 {
     if (m_inputAwaitDestinationRegister.has_value())
@@ -174,7 +221,7 @@ void Machine::opDraw(uint16_t opcode)
 {
     const uint8_t x = m_registers[(opcode & 0x0f00) >> 8];
     const uint8_t y = m_registers[(opcode & 0x00f0) >> 4];
-
+    bool colliding = false;
     const uint8_t height = opcode & 0x000f;
     for (int i = 0; i <= height; i++)
     {
@@ -182,11 +229,12 @@ void Machine::opDraw(uint16_t opcode)
         const uint8_t line = m_memory[m_memoryRegister + i];
         for (int j = 0; j < 8; j++)
         {
-            auto t1 = line & (1 << j);
-            auto t2 = t1 >> j;
-            getWorkVideoMemory()[pos + (8 - j)] ^= (line & (1 << j)) >> j;
+            // if both are equal to 1 xor will flip them to zero, which counts as collision
+            colliding |= (getWorkVideoMemory()[pos + (7 - j)] == (line & (1 << j)) >> j) && getWorkVideoMemory()[pos + (8 - j)] == 1;
+            getWorkVideoMemory()[pos + (7 - j)] ^= (line & (1 << j)) >> j;
         }
     }
+    m_registers[0xf] = colliding;
 }
 
 void Machine::opControlInstructions(uint16_t opcode)

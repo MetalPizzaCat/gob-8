@@ -45,6 +45,20 @@ enum class DataSize
     Word
 };
 
+class LabelReplacementData
+{
+public:
+    explicit LabelReplacementData(size_t position, size_t row, size_t column) : m_position(position), m_row(row), m_column(column) {}
+    size_t getPosition() const { return m_position; }
+    size_t getRow() const { return m_row; }
+    size_t getColumn() const { return m_column; }
+
+private:
+    size_t m_position;
+    size_t m_row;
+    size_t m_column;
+};
+
 std::string hexNumbers = "0123456789abcdef";
 
 bool isValidHexDigit(char c)
@@ -318,16 +332,20 @@ public:
             }
         }
 
-        for (std::pair<const std::string, std::vector<std::size_t>> const &sub : m_labelReplacementPositions)
+        for (std::pair<const std::string, std::vector<LabelReplacementData>> const &sub : m_labelReplacementPositions)
         {
             if (m_labelPositions.count(sub.first) == 0)
             {
-                throw AssemblingError(m_current - m_begin, m_currentLineNumber, "Unknown label used");
+                if (sub.second.empty())
+                {
+                    continue;
+                }
+                throw AssemblingError(sub.second[0].getRow(), sub.second[0].getColumn(), "Unknown label used");
             }
-            for (size_t pos : sub.second)
+            for (LabelReplacementData const &pos : sub.second)
             {
-                m_bytes[pos] |= (m_labelPositions[sub.first] & 0x0f00) >> 8;
-                m_bytes[pos + 1] = m_labelPositions[sub.first] & 0x00ff;
+                m_bytes[pos.getPosition()] |= (m_labelPositions[sub.first] & 0x0f00) >> 8;
+                m_bytes[pos.getPosition() + 1] = m_labelPositions[sub.first] & 0x00ff;
             }
         }
     }
@@ -336,11 +354,11 @@ public:
     {
         if (m_labelReplacementPositions.count(label) > 0)
         {
-            m_labelReplacementPositions[label].push_back(pos);
+            m_labelReplacementPositions[label].push_back(LabelReplacementData(pos, m_current - m_begin, m_currentLineNumber));
         }
         else
         {
-            m_labelReplacementPositions[label] = {pos};
+            m_labelReplacementPositions[label] = {LabelReplacementData(pos, m_current - m_begin, m_currentLineNumber)};
         }
     }
 
@@ -691,7 +709,7 @@ private:
                 m_current += res.size() + 1;
                 return res;
             }
-            if ((it == m_end && !std::isalpha(*it)) || (it != m_end && !std::isalnum(*it)))
+            if (it == m_end || (it != m_end && !(std::isalnum(*it) || (*it == '_'))))
             {
                 return {};
             }
@@ -799,12 +817,23 @@ private:
     template <typename IntegerType>
     std::optional<IntegerType> parseDecimal()
     {
-        if (!std::isdigit(*m_current))
+        std::string res;
+        size_t offset = 0;
+        if (*m_current == '-')
+        {
+            res = "-";
+            offset++;
+        }
+        else if (!std::isdigit(*m_current))
         {
             return {};
         }
-        std::string res = "";
-        size_t offset = 0;
+        else
+        {
+            res = "";
+        }
+
+        
         for (; (m_current + offset) != m_end && std::isdigit(*(m_current + offset)); offset++)
         {
             res += *(m_current + offset);
@@ -867,7 +896,7 @@ private:
         }
         size_t offset = 0;
         std::string res;
-        for (; (m_current + offset) != m_end && std::isalnum(*(m_current + offset)); offset++)
+        for (; (m_current + offset) != m_end && (std::isalnum(*(m_current + offset)) || *(m_current + offset) == '_'); offset++)
         {
             res += *(m_current + offset);
         }
@@ -924,7 +953,7 @@ private:
     StringConstIterator m_begin;
     size_t m_currentLineNumber;
     std::vector<uint8_t> m_bytes;
-    std::map<std::string, std::vector<size_t>> m_labelReplacementPositions;
+    std::map<std::string, std::vector<LabelReplacementData>> m_labelReplacementPositions;
     std::map<std::string, uint16_t> m_defines;
     std::map<std::string, size_t> m_labelPositions;
 };

@@ -43,13 +43,14 @@ std::optional<uint8_t> handleInput(SDL_Scancode key)
     return (it - Keymap.begin() + 1);
 }
 
-struct AudioData
+void dumpMemoryState(Machine &machine, int32_t fileId)
 {
-    uint32_t audioLength;
-    uint8_t *audioPosition;
-    int32_t volume;
-    bool playing = true;
-};
+    std::ofstream outfile(std::string("./savestate" + std::to_string(fileId) + ".bin"), std::ios::out | std::ios::binary);
+    outfile.write((const char *)machine.getMemory().data(), machine.getMemory().size());
+    // std::vector<uint8_t> additionalMemory = machine.getAdditionalMemory();
+    // outfile.write((const char *)additionalMemory.data(), additionalMemory.size());
+    std::cout << "Dumped memory contents to ./savestate" << fileId << ".bin" << std::endl;
+}
 
 int main(int argc, char **argv)
 {
@@ -90,6 +91,11 @@ int main(int argc, char **argv)
 
     Machine machine(bytes);
 
+    std::map<SDL_Scancode, bool> specialKeystates = {{SDL_Scancode::SDL_SCANCODE_F1, false},
+                                                     {SDL_Scancode::SDL_SCANCODE_F2, false},
+                                                     {SDL_Scancode::SDL_SCANCODE_F3, false},
+                                                     {SDL_Scancode::SDL_SCANCODE_F4, false}};
+
     DisplaySDL display;
 
     SDL_Event e;
@@ -118,11 +124,23 @@ int main(int argc, char **argv)
                     }
                     machine.setKeyState(inp.value(), true);
                 }
+                if (specialKeystates.count(e.key.keysym.scancode))
+                {
+                    if (specialKeystates[e.key.keysym.scancode] == false)
+                    {
+                        dumpMemoryState(machine, e.key.keysym.scancode - SDL_Scancode::SDL_SCANCODE_F1);
+                    }
+                    specialKeystates[e.key.keysym.scancode] = true;
+                }
                 break;
             case SDL_KEYUP:
                 if (std::optional<uint8_t> inp = handleInput(e.key.keysym.scancode); inp.has_value())
                 {
                     machine.setKeyState(inp.value(), false);
+                }
+                if (specialKeystates.count(e.key.keysym.scancode))
+                {
+                    specialKeystates[e.key.keysym.scancode] = false;
                 }
                 break;
             }
