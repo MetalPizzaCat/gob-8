@@ -1,4 +1,5 @@
 #include "DisplaySDL.hpp"
+#include "ResourceBeep.h"
 
 DisplaySDL::DisplaySDL()
 {
@@ -14,7 +15,7 @@ DisplaySDL::DisplaySDL()
 
     m_windowSurface = SDL_GetWindowSurface(m_window);
 
-    if (SDL_LoadWAV("./beep.wav", &m_wavSpec, &m_beepAudioBuffer, &m_beepAudioLength) == NULL)
+    if (SDL_LoadWAV_RW(SDL_RWFromConstMem(SoundDataBeep, sizeof(SoundDataBeep)), 0, &m_wavSpec, &m_beepAudioBuffer, &m_beepAudioLength) == NULL)
     {
         throw DisplayError(std::string("Failed to load beep sound. Error:") + SDL_GetError());
     }
